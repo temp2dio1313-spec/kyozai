@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鉄緑会 教材管理＆コード生成ツール</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #003366;
+            --bg-color: #f4f6f9;
+            --card-bg: #ffffff;
+            --text-color: #333;
+        }
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: var(--primary-color);
+            text-align: center;
+            border-bottom: 3px solid var(--primary-color);
+            padding-bottom: 10px;
+        }
+        .form-group {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .form-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .form-item label {
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #555;
+        }
+        input, select, button {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        .btn-container {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 10px;
+        }
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #002244;
+        }
+
+        /* 検索・フィルター */
+        .controls {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+        .controls input, .controls select {
+            flex: 1;
+        }
+
+        /* テーブル */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--card-bg);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+            font-size: 14px;
+            vertical-align: middle;
+        }
+        th {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+        
+        /* コード表示領域のスタイル */
+        .code-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: center;
+            padding: 5px 0;
+        }
+        .barcode-img {
+            max-width: 150px;
+            height: auto;
+        }
+        .qr-block {
+            padding: 5px;
+            background: white;
+        }
+        
+        .delete-btn {
+            background-color: #dc3545;
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+        .delete-btn:hover {
+            background-color: #bd2130;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>鉄緑会 教材管理＆コード表示ツール</h1>
+
+    <div class="form-group">
+        <div class="form-item">
+            <label for="materialName">教材名</label>
+            <input type="text" id="materialName" placeholder="例：数学実戦講座 I/II 第1回" required>
+        </div>
+        <div class="form-item">
+            <label for="subject">科目</label>
+            <select id="subject">
+                <option value="数学">数学</option>
+                <option value="英語">英語</option>
+                <option value="物理">物理</option>
+                <option value="化学">化学</option>
+                <option value="国語">国語</option>
+                <option value="その他">その他</option>
+            </select>
+        </div>
+        <div class="form-item">
+            <label for="publishYearMonth">発行年月</label>
+            <input type="month" id="publishYearMonth">
+        </div>
+        <div class="form-item">
+            <label for="isbn">ISBN（半角数字のみ入力）</label>
+            <input type="text" id="isbn" placeholder="例：9784123456789">
+        </div>
+        
+        <div class="btn-container">
+            <button type="button" onclick="addMaterial()">教材を登録（コード自動生成）</button>
+        </div>
+    </div>
+
+    <div class="controls">
+        <input type="text" id="searchBar" placeholder="教材名やISBNで検索..." oninput="renderTools()">
+        <select id="filterSubject" onchange="renderTools()">
+            <option value="すべて">すべての科目</option>
+            <option value="数学">数学</option>
+            <option value="英語">英語</option>
+            <option value="物理">物理</option>
+            <option value="化学">化学</option>
+            <option value="国語">国語</option>
+            <option value="その他">その他</option>
+        </select>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>科目</th>
+                <th>教材名</th>
+                <th>発行年月</th>
+                <th>ISBN</th>
+                <th style="width: 160px; text-align: center;">バーコード (JAN)</th>
+                <th style="width: 110px; text-align: center;">QRコード</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody id="materialList">
+            </tbody>
+    </table>
+</div>
+
+<script>
+    let materials = JSON.parse(localStorage.getItem('tetsuryoku_barcode_books')) || [];
+
+    // 教材の追加
+    function addMaterial() {
+        const name = document.getElementById('materialName').value.trim();
+        const subject = document.getElementById('subject').value;
+        const publishYearMonth = document.getElementById('publishYearMonth').value;
+        let isbn = document.getElementById('isbn').value.trim().replace(/-/g, ''); // ハイフンを除去
+
+        if (!name) {
+            alert('教材名を入力してください！');
+            return;
+        }
+
+        const newMaterial = {
+            id: Date.now(),
+            name,
+            subject,
+            publishYearMonth: publishYearMonth || '-',
+            isbn: isbn || ''
+        };
+
+        materials.push(newMaterial);
+        saveData();
+        renderTools();
+
+        // フォームリセット
+        document.getElementById('materialName').value = '';
+        document.getElementById('publishYearMonth').value = '';
+        document.getElementById('isbn').value = '';
+    }
+
+    function saveData() {
+        localStorage.setItem('tetsuryoku_barcode_books', JSON.stringify(materials));
+    }
+
+    function deleteMaterial(id) {
+        if (confirm('この教材を削除しますか？')) {
+            materials = materials.filter(item => item.id !== id);
+            saveData();
+            renderTools();
+        }
+    }
+
+    function renderTools() {
+        const listContainer = document.getElementById('materialList');
+        const searchQuery = document.getElementById('searchBar').value.toLowerCase();
+        const filterSubject = document.getElementById('filterSubject').value;
+
+        listContainer.innerHTML = '';
+
+        materials.forEach(item => {
+            const matchesSearch = item.name.toLowerCase().includes(searchQuery) || item.isbn.toLowerCase().includes(searchQuery);
+            const matchesSubject = filterSubject === 'すべて' || item.subject === filterSubject;
+
+            if (matchesSearch && matchesSubject) {
+                const tr = document.createElement('tr');
+                
+                // 各行の一意のIDを作成
+                const barcodeId = `barcode-${item.id}`;
+                const qrId = `qr-${item.id}`;
+
+                tr.innerHTML = `
+                    <td><strong>[${item.subject}]</strong></td>
+                    <td>${item.name}</td>
+                    <td>${item.publishYearMonth}</td>
+                    <td>${item.isbn || '-'}</td>
+                    <td style="text-align: center;">
+                        ${item.isbn ? `<svg id="${barcodeId}" class="barcode-img"></svg>` : '-'}
+                    </td>
+                    <td style="text-align: center;">
+                        ${item.isbn ? `<div id="${qrId}" class="qr-block"></div>` : '-'}
+                    </td>
+                    <td>
+                        <button class="delete-btn" onclick="deleteMaterial(${item.id})">削除</button>
+                    </td>
+                `;
+                listContainer.appendChild(tr);
+
+                // ISBNが存在する場合のみ、バーコードとQRコードを描画
+                if (item.isbn) {
+                    // 1. バーコード生成 (本のISBNコードは通常13桁のEAN/JAN13形式)
+                    try {
+                        JsBarcode(`#${barcodeId}`, item.isbn, {
+                            format: "EAN13",
+                            width: 1.2,
+                            height: 40,
+                            displayValue: false // 下部に数字を表示したい場合は true に変更
+                        });
+                    } catch (e) {
+                        // 13桁の正しいJANコードではない場合はCODE128形式でフォールバック表示
+                        try {
+                            JsBarcode(`#${barcodeId}`, item.isbn, { format: "CODE128", width: 1.2, height: 40, displayValue: false });
+                        } catch(err) {
+                            document.getElementById(barcodeId).parentElement.innerHTML = '<span style="font-size:11px; color:red;">変換不可</span>';
+                        }
+                    }
+
+                    // 2. QRコード生成
+                    try {
+                        new QRCode(document.getElementById(qrId), {
+                            text: item.isbn,
+                            width: 80,
+                            height: 80,
+                            correctLevel: QRCode.CorrectLevel.H
+                        });
+                    } catch(err) {
+                        document.getElementById(qrId).innerHTML = '-';
+                    }
+                }
+            }
+        });
+    }
+
+    // 初期描画
+    renderTools();
+</script>
+
+</body>
+</html>
