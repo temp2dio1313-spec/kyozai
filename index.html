@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>鉄緑会 教材管理＆コード生成ツール</title>
+    <title>鉄緑会 教材管理＆コード表示ツール (編集・メモ機能付き)</title>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
@@ -21,7 +21,7 @@
             padding: 20px;
         }
         .container {
-            max-width: 1100px;
+            max-width: 1200px;
             margin: 0 auto;
         }
         h1 {
@@ -37,7 +37,7 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             margin-bottom: 20px;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 15px;
         }
         .form-item {
@@ -50,12 +50,16 @@
             margin-bottom: 5px;
             color: #555;
         }
-        input, select, button {
+        input, select, button, textarea {
             padding: 10px;
             border: 1px solid #ccc;
             border-radius: 4px;
             font-size: 14px;
             box-sizing: border-box;
+        }
+        textarea {
+            resize: vertical;
+            height: 41px;
         }
         .btn-container {
             grid-column: 1 / -1;
@@ -93,9 +97,10 @@
             border-radius: 8px;
             overflow: hidden;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 50px;
         }
         th, td {
-            padding: 12px 15px;
+            padding: 12px 10px;
             text-align: left;
             border-bottom: 1px solid #ddd;
             font-size: 14px;
@@ -110,29 +115,33 @@
         }
         
         /* コード表示領域のスタイル */
-        .code-container {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            align-items: center;
-            padding: 5px 0;
-        }
         .barcode-img {
-            max-width: 150px;
+            max-width: 130px;
             height: auto;
         }
         .qr-block {
-            padding: 5px;
+            padding: 3px;
             background: white;
+            display: inline-block;
         }
         
-        .delete-btn {
-            background-color: #dc3545;
-            padding: 5px 10px;
-            font-size: 12px;
+        /* アクションボタン */
+        .action-btns {
+            display: flex;
+            gap: 5px;
         }
-        .delete-btn:hover {
-            background-color: #bd2130;
+        .edit-btn { background-color: #ffc107; color: #212529; }
+        .edit-btn:hover { background-color: #e0a800; }
+        .save-btn { background-color: #28a745; }
+        .save-btn:hover { background-color: #218838; }
+        .delete-btn { background-color: #dc3545; }
+        .delete-btn:hover { background-color: #bd2130; }
+
+        /* インライン編集用入力欄 */
+        .inline-edit {
+            width: 100%;
+            padding: 6px;
+            font-size: 13px;
         }
     </style>
 </head>
@@ -162,17 +171,21 @@
             <input type="month" id="publishYearMonth">
         </div>
         <div class="form-item">
-            <label for="isbn">ISBN（半角数字のみ入力）</label>
+            <label for="isbn">ISBN (半角数字)</label>
             <input type="text" id="isbn" placeholder="例：9784123456789">
+        </div>
+        <div class="form-item">
+            <label for="memo">メモ</label>
+            <textarea id="memo" placeholder="例：間違えた問題、重要度など"></textarea>
         </div>
         
         <div class="btn-container">
-            <button type="button" onclick="addMaterial()">教材を登録（コード自動生成）</button>
+            <button type="button" onclick="addMaterial()">教材を登録</button>
         </div>
     </div>
 
     <div class="controls">
-        <input type="text" id="searchBar" placeholder="教材名やISBNで検索..." oninput="renderTools()">
+        <input type="text" id="searchBar" placeholder="教材名、ISBN、メモで検索..." oninput="renderTools()">
         <select id="filterSubject" onchange="renderTools()">
             <option value="すべて">すべての科目</option>
             <option value="数学">数学</option>
@@ -187,13 +200,14 @@
     <table>
         <thead>
             <tr>
-                <th>科目</th>
-                <th>教材名</th>
-                <th>発行年月</th>
-                <th>ISBN</th>
-                <th style="width: 160px; text-align: center;">バーコード (JAN)</th>
-                <th style="width: 110px; text-align: center;">QRコード</th>
-                <th>操作</th>
+                <th style="width: 90px;">科目</th>
+                <th style="width: 220px;">教材名</th>
+                <th style="width: 100px;">発行年月</th>
+                <th style="width: 120px;">ISBN</th>
+                <th style="width: 200px;">メモ</th>
+                <th style="width: 140px; text-align: center;">バーコード</th>
+                <th style="width: 90px; text-align: center;">QR</th>
+                <th style="width: 120px;">操作</th>
             </tr>
         </thead>
         <tbody id="materialList">
@@ -202,14 +216,16 @@
 </div>
 
 <script>
-    let materials = JSON.parse(localStorage.getItem('tetsuryoku_barcode_books')) || [];
+    let materials = JSON.parse(localStorage.getItem('tetsuryoku_advanced_books')) || [];
+    let editingId = null; // 現在編集中の行のID
 
     // 教材の追加
     function addMaterial() {
         const name = document.getElementById('materialName').value.trim();
         const subject = document.getElementById('subject').value;
         const publishYearMonth = document.getElementById('publishYearMonth').value;
-        let isbn = document.getElementById('isbn').value.trim().replace(/-/g, ''); // ハイフンを除去
+        let isbn = document.getElementById('isbn').value.trim().replace(/-/g, '');
+        const memo = document.getElementById('memo').value.trim();
 
         if (!name) {
             alert('教材名を入力してください！');
@@ -221,7 +237,8 @@
             name,
             subject,
             publishYearMonth: publishYearMonth || '-',
-            isbn: isbn || ''
+            isbn: isbn || '',
+            memo: memo || '-'
         };
 
         materials.push(newMaterial);
@@ -232,15 +249,62 @@
         document.getElementById('materialName').value = '';
         document.getElementById('publishYearMonth').value = '';
         document.getElementById('isbn').value = '';
+        document.getElementById('memo').value = '';
     }
 
     function saveData() {
-        localStorage.setItem('tetsuryoku_barcode_books', JSON.stringify(materials));
+        localStorage.setItem('tetsuryoku_advanced_books', JSON.stringify(materials));
+    }
+
+    // 編集モードに入る
+    function startEdit(id) {
+        editingId = id;
+        renderTools();
+    }
+
+    // 編集内容を保存する
+    function saveEdit(id) {
+        const row = document.getElementById(`row-${id}`);
+        const newSubject = row.querySelector('.edit-subject').value;
+        const newName = row.querySelector('.edit-name').value.trim();
+        const newPublish = row.querySelector('.edit-publish').value;
+        const newIsbn = row.querySelector('.edit-isbn').value.trim().replace(/-/g, '');
+        const newMemo = row.querySelector('.edit-memo').value.trim();
+
+        if (!newName) {
+            alert('教材名は必須です。');
+            return;
+        }
+
+        materials = materials.map(item => {
+            if (item.id === id) {
+                return {
+                    ...item,
+                    subject: newSubject,
+                    name: newName,
+                    publishYearMonth: newPublish || '-',
+                    isbn: newIsbn,
+                    memo: newMemo || '-'
+                };
+            }
+            return item;
+        });
+
+        saveData();
+        editingId = null; // 編集モード終了
+        renderTools();
+    }
+
+    // 編集をキャンセル
+    function cancelEdit() {
+        editingId = null;
+        renderTools();
     }
 
     function deleteMaterial(id) {
         if (confirm('この教材を削除しますか？')) {
             materials = materials.filter(item => item.id !== id);
+            if(editingId === id) editingId = null;
             saveData();
             renderTools();
         }
@@ -254,59 +318,87 @@
         listContainer.innerHTML = '';
 
         materials.forEach(item => {
-            const matchesSearch = item.name.toLowerCase().includes(searchQuery) || item.isbn.toLowerCase().includes(searchQuery);
+            const matchesSearch = item.name.toLowerCase().includes(searchQuery) || 
+                                  item.isbn.toLowerCase().includes(searchQuery) ||
+                                  item.memo.toLowerCase().includes(searchQuery);
             const matchesSubject = filterSubject === 'すべて' || item.subject === filterSubject;
 
             if (matchesSearch && matchesSubject) {
                 const tr = document.createElement('tr');
+                tr.id = `row-${item.id}`;
                 
-                // 各行の一意のIDを作成
                 const barcodeId = `barcode-${item.id}`;
                 const qrId = `qr-${item.id}`;
 
-                tr.innerHTML = `
-                    <td><strong>[${item.subject}]</strong></td>
-                    <td>${item.name}</td>
-                    <td>${item.publishYearMonth}</td>
-                    <td>${item.isbn || '-'}</td>
-                    <td style="text-align: center;">
-                        ${item.isbn ? `<svg id="${barcodeId}" class="barcode-img"></svg>` : '-'}
-                    </td>
-                    <td style="text-align: center;">
-                        ${item.isbn ? `<div id="${qrId}" class="qr-block"></div>` : '-'}
-                    </td>
-                    <td>
-                        <button class="delete-btn" onclick="deleteMaterial(${item.id})">削除</button>
-                    </td>
-                `;
+                if (editingId === item.id) {
+                    // --- 編集モードの行レイアウト ---
+                    tr.innerHTML = `
+                        <td>
+                            <select class="inline-edit edit-subject">
+                                <option value="数学" ${item.subject === '数学' ? 'selected' : ''}>数学</option>
+                                <option value="英語" ${item.subject === '英語' ? 'selected' : ''}>英語</option>
+                                <option value="物理" ${item.subject === '物理' ? 'selected' : ''}>物理</option>
+                                <option value="化学" ${item.subject === '化学' ? 'selected' : ''}>化学</option>
+                                <option value="国語" ${item.subject === '国語' ? 'selected' : ''}>国語</option>
+                                <option value="その他" ${item.subject === 'その他' ? 'selected' : ''}>その他</option>
+                            </select>
+                        </td>
+                        <td><input type="text" class="inline-edit edit-name" value="${item.name}"></td>
+                        <td><input type="month" class="inline-edit edit-publish" value="${item.publishYearMonth !== '-' ? item.publishYearMonth : ''}"></td>
+                        <td><input type="text" class="inline-edit edit-isbn" value="${item.isbn}"></td>
+                        <td><input type="text" class="inline-edit edit-memo" value="${item.memo !== '-' ? item.memo : ''}"></td>
+                        <td style="text-align: center; color: #999; font-size: 11px;">編集中のため<br>非表示</td>
+                        <td style="text-align: center; color: #999; font-size: 11px;">-</td>
+                        <td>
+                            <div class="action-btns">
+                                <button class="save-btn" onclick="saveEdit(${item.id})">保存</button>
+                                <button style="background-color:#6c757d" onclick="cancelEdit()">取消</button>
+                            </div>
+                        </td>
+                    `;
+                } else {
+                    // --- 通常表示モードの行レイアウト ---
+                    tr.innerHTML = `
+                        <td><strong>[${item.subject}]</strong></td>
+                        <td>${item.name}</td>
+                        <td>${item.publishYearMonth}</td>
+                        <td>${item.isbn || '-'}</td>
+                        <td style="word-break: break-all;">${item.memo}</td>
+                        <td style="text-align: center;">
+                            ${item.isbn ? `<svg id="${barcodeId}" class="barcode-img"></svg>` : '-'}
+                        </td>
+                        <td style="text-align: center;">
+                            ${item.isbn ? `<div id="${qrId}" class="qr-block"></div>` : '-'}
+                        </td>
+                        <td>
+                            <div class="action-btns">
+                                <button class="edit-btn" onclick="startEdit(${item.id})">編集</button>
+                                <button class="delete-btn" onclick="deleteMaterial(${item.id})">削除</button>
+                            </div>
+                        </td>
+                    `;
+                }
+                
                 listContainer.appendChild(tr);
 
-                // ISBNが存在する場合のみ、バーコードとQRコードを描画
-                if (item.isbn) {
-                    // 1. バーコード生成 (本のISBNコードは通常13桁のEAN/JAN13形式)
+                // 通常モードかつISBNがある場合のみコードを描画
+                if (editingId !== item.id && item.isbn) {
+                    // バーコード生成
                     try {
                         JsBarcode(`#${barcodeId}`, item.isbn, {
-                            format: "EAN13",
-                            width: 1.2,
-                            height: 40,
-                            displayValue: false // 下部に数字を表示したい場合は true に変更
+                            format: "EAN13", width: 1.1, height: 35, displayValue: false
                         });
                     } catch (e) {
-                        // 13桁の正しいJANコードではない場合はCODE128形式でフォールバック表示
                         try {
-                            JsBarcode(`#${barcodeId}`, item.isbn, { format: "CODE128", width: 1.2, height: 40, displayValue: false });
+                            JsBarcode(`#${barcodeId}`, item.isbn, { format: "CODE128", width: 1.1, height: 35, displayValue: false });
                         } catch(err) {
                             document.getElementById(barcodeId).parentElement.innerHTML = '<span style="font-size:11px; color:red;">変換不可</span>';
                         }
                     }
-
-                    // 2. QRコード生成
+                    // QRコード生成
                     try {
                         new QRCode(document.getElementById(qrId), {
-                            text: item.isbn,
-                            width: 80,
-                            height: 80,
-                            correctLevel: QRCode.CorrectLevel.H
+                            text: item.isbn, width: 70, height: 70, correctLevel: QRCode.CorrectLevel.H
                         });
                     } catch(err) {
                         document.getElementById(qrId).innerHTML = '-';
@@ -316,7 +408,7 @@
         });
     }
 
-    // 初期描画
+    // 初回描画
     renderTools();
 </script>
 
